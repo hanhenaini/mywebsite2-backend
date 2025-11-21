@@ -76,10 +76,10 @@ def contact():
         body = f"姓名: {name}\n邮箱: {email}\n\n消息:\n{message}"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        # 发送邮件
+        # 发送邮件（使用环境变量密码）
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
-        server.login('han02902341100@gmail.com', 'uwjf zkfx imio ilhr')  # ← 替换你的16位App密码
+        server.login('han02902341100@gmail.com', os.getenv('EMAIL_PASSWORD'))  # 使用环境变量
         server.sendmail(email, 'han02902341100@gmail.com', msg.as_string())
         server.quit()
 
@@ -91,4 +91,4 @@ def contact():
 
 # ==================== 启动服务器 ====================
 if __name__ == '__main__':
-    app.run(debug=True, host='127.0.0.1', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))  # 生产环境端口支持
