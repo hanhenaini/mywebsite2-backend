@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import json
 import os
 import smtplib
 from email.mime.text import MIMEText
@@ -10,8 +9,8 @@ from flask_cors import CORS
 
 # ==================== Flask 应用 ====================
 app = Flask(__name__)
-# 精确 CORS：只允许您的 GitHub Pages（更安全，避免 Render proxy 问题）
-CORS(app, resources={r"/api/*": {"origins": "https://hanenaini.github.io"}})
+# 优化 CORS：全路径允许所有来源（测试用，生产改具体域名）
+CORS(app, resources={r"/*": {"origins": "*"}})  # 改成 r"/*" 覆盖所有路由，包括 OPTIONS preflight
 
 # ==================== 数据库配置 ====================
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -28,11 +27,10 @@ class Project(db.Model):
     link = db.Column(db.String(200))
 
 
-# 初始化数据库（只在需要时创建）
+# 初始化数据库
 def init_db():
     with app.app_context():
         db.create_all()
-        # 添加示例数据（如果表空）
         if Project.query.count() == 0:
             projects = [
                 Project(title='示例项目1', description='Flask API 开发', link='https://github.com/hanenaini/project1'),
@@ -43,7 +41,7 @@ def init_db():
             print("数据库初始化完成")
 
 
-init_db()  # 启动时运行
+init_db()
 
 
 # ==================== 路由 ====================
@@ -62,18 +60,19 @@ def hello():
     return jsonify({"message": "你好，寒的后端！", "status": "running"})
 
 
-# --- 获取项目 ---
 @app.route('/api/projects')
 def get_projects():
     projects = Project.query.all()
     data = [{'title': p.title, 'description': p.description, 'link': p.link or '#'} for p in projects]
-    print(f"项目查询: 返回 {len(data)} 个项目")  # 日志调试
+    print(f"项目查询: 返回 {len(data)} 个项目")
     return jsonify(data)
 
 
-# --- 联系表单发送邮件 ---
-@app.route('/api/contact', methods=['POST'])
+@app.route('/api/contact', methods=['POST', 'OPTIONS'])  # 明确添加 OPTIONS 支持 preflight
 def contact():
+    if request.method == 'OPTIONS':
+        return '', 200  # 预检请求直接返回 200
+
     try:
         data = request.get_json()
         name = data.get('name', '匿名')
@@ -91,11 +90,11 @@ def contact():
         body = f"姓名: {name}\n邮箱: {email}\n\n消息:\n{message}"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        # 发送邮件（使用环境变量密码）
+        # 发送邮件
         password = os.getenv('EMAIL_PASSWORD')
         if not password:
-            print("警告: EMAIL_PASSWORD 未设置，邮件发送跳过")
-            return jsonify({"error": "服务器配置问题，请联系开发者"}), 500
+            print("警告: EMAIL_PASSWORD 未设置")
+            return jsonify({"error": "服务器配置问题"}), 500
 
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -103,7 +102,7 @@ def contact():
         server.sendmail(email, 'han02902341100@gmail.com', msg.as_string())
         server.quit()
 
-        print(f"邮件发送成功: 来自 {email} ({name})")  # 日志
+        print(f"邮件发送成功: 来自 {email}")
         return jsonify({"success": "发送成功！寒会尽快回复"}), 200
     except Exception as e:
         print(f"邮件发送失败: {e}")
