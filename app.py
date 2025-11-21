@@ -4,20 +4,21 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 
 # ==================== Flask 应用 ====================
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})  # 允许所有来源访问 /api/*
+# 精确 CORS：只允许您的 GitHub Pages（更安全，避免 Render proxy 问题）
+CORS(app, resources={r"/api/*": {"origins": "https://hanenaini.github.io"}})
 
 # ==================== 数据库配置 ====================
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(BASE_DIR, 'projects.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
 
 # ==================== 项目模型 ====================
 class Project(db.Model):
@@ -26,12 +27,26 @@ class Project(db.Model):
     description = db.Column(db.String(200), nullable=False)
     link = db.Column(db.String(200))
 
-# 创建表
-with app.app_context():
-    db.create_all()
+
+# 初始化数据库（只在需要时创建）
+def init_db():
+    with app.app_context():
+        db.create_all()
+        # 添加示例数据（如果表空）
+        if Project.query.count() == 0:
+            projects = [
+                Project(title='示例项目1', description='Flask API 开发', link='https://github.com/hanenaini/project1'),
+                Project(title='示例项目2', description='前端网站构建', link='https://github.com/hanenaini/project2')
+            ]
+            db.session.bulk_save_objects(projects)
+            db.session.commit()
+            print("数据库初始化完成")
+
+
+init_db()  # 启动时运行
+
 
 # ==================== 路由 ====================
-
 @app.route('/')
 def home():
     return '''
@@ -41,20 +56,20 @@ def home():
     </div>
     '''
 
+
 @app.route('/api/hello')
 def hello():
     return jsonify({"message": "你好，寒的后端！", "status": "running"})
+
 
 # --- 获取项目 ---
 @app.route('/api/projects')
 def get_projects():
     projects = Project.query.all()
-    data = [{
-        'title': p.title,
-        'description': p.description,
-        'link': p.link or '#'
-    } for p in projects]
-    return jsonify(data)  # 自动处理 CORS + 中文
+    data = [{'title': p.title, 'description': p.description, 'link': p.link or '#'} for p in projects]
+    print(f"项目查询: 返回 {len(data)} 个项目")  # 日志调试
+    return jsonify(data)
+
 
 # --- 联系表单发送邮件 ---
 @app.route('/api/contact', methods=['POST'])
@@ -77,18 +92,24 @@ def contact():
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
         # 发送邮件（使用环境变量密码）
+        password = os.getenv('EMAIL_PASSWORD')
+        if not password:
+            print("警告: EMAIL_PASSWORD 未设置，邮件发送跳过")
+            return jsonify({"error": "服务器配置问题，请联系开发者"}), 500
+
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
-        server.login('han02902341100@gmail.com', os.getenv('EMAIL_PASSWORD'))  # 使用环境变量
+        server.login('han02902341100@gmail.com', password)
         server.sendmail(email, 'han02902341100@gmail.com', msg.as_string())
         server.quit()
 
+        print(f"邮件发送成功: 来自 {email} ({name})")  # 日志
         return jsonify({"success": "发送成功！寒会尽快回复"}), 200
-
     except Exception as e:
-        print("邮件发送失败:", e)
+        print(f"邮件发送失败: {e}")
         return jsonify({"error": "发送失败，请稍后重试"}), 500
+
 
 # ==================== 启动服务器 ====================
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))  # 生产环境端口支持
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
